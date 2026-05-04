@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-openai
+langgraph
+langgraph-cli[inmem]
+pydantic
+python-dotenv
+mcp
+streamlit
+requests
