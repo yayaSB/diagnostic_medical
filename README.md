@@ -171,26 +171,4 @@ git commit -m "Add MCP reference tool and Streamlit frontend"
 git commit -m "Document setup, tests and screenshots"
 ```
 
-## Création du repository GitHub privé
 
-Créer un repository privé GitHub pour le groupe, puis ajouter le collaborateur demandé par le professeur.
-
-Avec GitHub CLI, la création du dépôt peut se faire ainsi :
-
-```bash
-gh repo create NOM_DU_REPO --private --source . --remote origin --push
-```
-
-Pour l'ajout du collaborateur, utiliser l'interface GitHub :
-
-```text
-Repository -> Settings -> Collaborators -> Add people -> m.youssfi@enset-media.ac.ma
-```
-
-Si le username GitHub du professeur est connu, l'ajout peut aussi être fait avec :
-
-```bash
-gh api -X PUT repos/OWNER/NOM_DU_REPO/collaborators/USERNAME_GITHUB -f permission=push
-```
-
-Déposer ensuite le lien du repository dans Classroom.
