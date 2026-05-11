@@ -2,7 +2,7 @@
 
 ## 1. Presentation generale
 
-Ce projet est une application academique qui simule un workflow d'orientation clinique preliminaire avec un systeme multi-agents. Il utilise LangGraph pour orchestrer les agents, FastAPI pour exposer le backend, MCP pour fournir un outil externe de reference, OpenAI via LangChain pour generer les textes cliniques, et Streamlit pour l'interface utilisateur.
+Ce projet est une application academique qui simule un workflow d'orientation clinique preliminaire avec un systeme multi-agents. Il utilise LangGraph pour orchestrer les agents, FastAPI pour exposer le backend, MCP pour fournir un outil externe de reference, OpenAI via LangChain pour generer les textes cliniques, et React + Vite pour l'interface utilisateur.
 
 > Mention obligatoire : Ce systeme ne remplace pas une consultation medicale.
 
@@ -31,7 +31,7 @@ Les objectifs principaux sont :
 | API backend | FastAPI |
 | Validation humaine | Interruptions LangGraph |
 | Integration externe | MCP |
-| Frontend | Streamlit |
+| Frontend | React, Vite, Lucide React |
 | Documentation API | Swagger UI FastAPI |
 | Gestion du code | Git, GitHub |
 
@@ -62,7 +62,11 @@ project/
 │   └── data/
 │       └── red_flags.md
 ├── frontend/
-│   └── streamlit_app.py
+│   ├── index.html
+│   ├── package.json
+│   └── src/
+│       ├── main.jsx
+│       └── styles.css
 ├── docs/
 │   └── screenshots/
 └── README.md
@@ -269,9 +273,13 @@ Exemple de reprise :
 }
 ```
 
-## 12. Frontend Streamlit
+## 12. Frontend React + Vite
 
-Fichier : `frontend/streamlit_app.py`
+Fichiers principaux :
+
+- `frontend/src/main.jsx`
+- `frontend/src/styles.css`
+- `frontend/package.json`
 
 Le frontend permet d'utiliser le workflow sans appeler directement l'API.
 
@@ -282,6 +290,15 @@ Ecrans couverts :
 - saisie des reponses patient ;
 - revue medecin avec synthese et recommandation ;
 - affichage du rapport final.
+
+L'interface React est dynamique et fluide :
+
+- stepper de progression ;
+- affichage du statut de consultation ;
+- gestion des chargements API ;
+- transitions visuelles entre les etapes ;
+- affichage structure du rapport final ;
+- design responsive pour desktop et mobile.
 
 ## 13. Installation
 
@@ -299,6 +316,13 @@ Creer ensuite le fichier `backend/.env` :
 ```env
 OPENAI_API_KEY=sk-votre-cle-api-ici
 OPENAI_MODEL=gpt-4o-mini
+```
+
+Installer ensuite le frontend :
+
+```bash
+cd ../frontend
+npm install
 ```
 
 ## 14. Execution
@@ -322,13 +346,13 @@ Dans un deuxieme terminal :
 
 ```bash
 cd frontend
-streamlit run streamlit_app.py
+npm run dev
 ```
 
 Adresse par defaut :
 
 ```text
-http://localhost:8501
+http://127.0.0.1:5173
 ```
 
 ### 14.3 Lancer le serveur MCP
@@ -431,7 +455,7 @@ Ajouter les captures dans `docs/screenshots/`.
 
 ![Capture FastAPI](docs/screenshots/fastapi-docs.png)
 
-### 17.3 Frontend Streamlit
+### 17.3 Frontend React
 
 ![Capture Frontend](docs/screenshots/frontend.png)
 
@@ -460,7 +484,7 @@ Le projet respecte les contraintes pedagogiques suivantes :
 
 ## 19. Gestion Git et GitHub
 
-Le projet est versionne avec Git. Les commits montrent l'avancement progressif du projet :
+Le projet est versionne avec Git. Les commits doivent montrer l'avancement progressif :
 
 ```bash
 git status
@@ -468,9 +492,21 @@ git add .
 git commit -m "Message du commit"
 ```
 
+Le repository GitHub doit etre prive et partage avec le professeur :
+
+```text
+m.youssfi@enset-media.ac.ma
+```
+
+Important :
+
+- ne jamais pousser `backend/.env` ;
+- pousser seulement `backend/.env.example` ;
+- verifier les fichiers avec `git status` avant chaque push ;
+- ajouter les captures dans `docs/screenshots/` avant le rendu final si elles doivent apparaitre dans le README.
 
 ## 20. Conclusion
 
-Ce projet implemente un systeme multi-agents medical pedagogique conforme au cahier des charges. Il combine LangGraph, FastAPI, MCP, OpenAI et Streamlit pour simuler une consultation encadree, avec collecte patient, synthese preliminaire, recommandation prudente, intervention du medecin et generation d'un rapport final.
+Ce projet implemente un systeme multi-agents medical pedagogique conforme au cahier des charges. Il combine LangGraph, FastAPI, MCP, OpenAI et React + Vite pour simuler une consultation encadree, avec collecte patient, synthese preliminaire, recommandation prudente, intervention du medecin et generation d'un rapport final.
 
 Le systeme reste volontairement prudent : il assiste l'orientation clinique mais ne remplace jamais l'avis d'un professionnel de sante.
