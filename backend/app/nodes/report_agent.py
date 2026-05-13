@@ -22,9 +22,7 @@ class ReportAgentNode:
         
         new_messages = messages + [
             SystemMessage(content="[Report Agent] Rapport final genere."),
-            HumanMessage(content=f"RAPPORT FINAL
-
-{report}")
+            HumanMessage(content=f"RAPPORT FINAL\n\n{report}")
         ]
         
         return {
@@ -35,13 +33,9 @@ class ReportAgentNode:
         }
     
     def _generate_report(self, case, responses, summary, care, treatment, notes):
-        context = f"Cas initial: {case}
-
-Reponses patient:
-"
+        context = f"Cas initial: {case}\n\nReponses patient:\n"
         for i, resp in enumerate(responses, 1):
-            context += f"{i}. {resp.get('question', '')} -> {resp.get('answer', '')}
-"
+            context += f"{i}. {resp.get('question', '')} -> {resp.get('answer', '')}\n"
         
         prompt = f"""Generez un rapport medical structure au format suivant:
 
