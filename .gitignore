@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# UV specific
+.venv/
+venv/
+ENV/
+env/
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment (NEVER commit this!)
+.env
+
+# LangGraph
+.langgraph_api/
+
+# Streamlit
+.streamlit/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+dist/
+build/
+*.egg-info/
