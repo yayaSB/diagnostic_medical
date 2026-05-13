@@ -54,10 +54,7 @@ function Stepper({ activeStep }) {
 }
 
 function StatusCard({ data }) {
-  const interrupt = data?.interrupt;
-  const answeredFromInterrupt =
-    interrupt?.type === "patient_question" ? Math.max(0, interrupt.question_number - 1) : null;
-  const answers = data?.state?.question_count || data?.state?.patient_answers?.length || answeredFromInterrupt || 0;
+  const answers = data?.state?.patient_answers?.length || 0;
   const status = data?.status === "completed" ? "Terminee" : data ? "En cours" : "Nouvelle";
 
   return (
