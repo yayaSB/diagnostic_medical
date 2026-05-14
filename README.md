@@ -306,9 +306,9 @@ Depuis la racine du projet :
 
 ```bash
 cd backend
-python -m venv .venv
+uv venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+uv sync
 ```
 
 Creer ensuite le fichier `backend/.env` :
