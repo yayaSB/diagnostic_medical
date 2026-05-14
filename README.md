@@ -1,39 +1,46 @@
-# Rapport de projet : Systeme multi-agents medical avec LangGraph
+# Rapport de projet : Système multi-agents médical avec LangGraph
 
-## 1. Presentation generale
+## 1. Présentation générale
 
-Ce projet est une application academique qui simule un workflow d'orientation clinique preliminaire avec un systeme multi-agents. Il utilise LangGraph pour orchestrer les agents, FastAPI pour exposer le backend, MCP pour fournir un outil externe de reference, OpenAI via LangChain pour generer les textes cliniques, et React + Vite pour l'interface utilisateur.
+Ce projet est une application académique qui simule un workflow d'orientation clinique préliminaire avec un système multi-agents. Il utilise **LangGraph** pour orchestrer les agents, **FastAPI** pour exposer le backend, **MCP** pour fournir un outil externe de référence, **OpenAI via LangChain** pour générer les textes cliniques, et **React + Vite** pour l'interface utilisateur.
 
-> Mention obligatoire : Ce systeme ne remplace pas une consultation medicale.
+> **Mention obligatoire :** Ce système ne remplace pas une consultation médicale.
 
-Le systeme ne fournit pas de diagnostic definitif. Il produit une synthese clinique preliminaire, une recommandation intermediaire prudente, puis un rapport final apres validation humaine par un medecin traitant.
+Le système ne fournit pas de diagnostic définitif. Il produit une synthèse clinique préliminaire, une recommandation intermédiaire prudente, puis un rapport final après validation humaine par un médecin traitant.
+
+---
 
 ## 2. Objectifs du projet
 
-Les objectifs principaux sont :
+- Modéliser un workflow multi-agents avec LangGraph  
+- Gérer un état partagé entre les agents  
+- Intégrer des tools pour les questions patient et les recommandations  
+- Ajouter une étape **Human-in-the-Loop**  
+- Exposer le workflow via FastAPI  
+- Intégrer MCP  
+- Connecter un frontend React  
+- Tester le graphe dans LangGraph Studio  
+- Documenter le projet avec captures d’écran  
 
-- modeliser un workflow multi-agents avec LangGraph ;
-- gerer un etat partage entre les agents ;
-- integrer des tools pour les questions patient et les recommandations ;
-- ajouter une etape Human-in-the-Loop pour le medecin ;
-- exposer le workflow via une API FastAPI ;
-- integrer au moins un outil MCP ;
-- connecter un frontend pour utiliser l'application ;
-- tester le graphe dans LangGraph Studio ;
-- documenter le projet dans un README sous forme de rapport avec captures d'ecran.
+---
 
-## 3. Technologies utilisees
+## 3. Technologies utilisées
 
 | Partie | Technologie |
-| --- | --- |
-| Orchestration multi-agents | LangGraph |
-| Agents et LLM | LangChain, OpenAI |
-| API backend | FastAPI |
-| Validation humaine | Interruptions LangGraph |
-| Integration externe | MCP |
-| Frontend | React, Vite, Lucide React |
-| Documentation API | Swagger UI FastAPI |
-| Gestion du code | Git, GitHub |
+|------|--------|
+| Orchestration | LangGraph |
+| LLM | LangChain + OpenAI |
+| Backend | FastAPI |
+| Human-in-the-loop | Interruptions LangGraph |
+| MCP | Serveur externe |
+| Frontend | React + Vite |
+| UI | Lucide React |
+| Export | jsPDF, html2canvas |
+| Charts | Chart.js |
+| Docs API | Swagger UI |
+| Versioning | Git, GitHub |
+
+---
 
 ## 4. Architecture du projet
 
@@ -53,448 +60,293 @@ project/
 │   │   └── tools/
 │   │       ├── patient_tools.py
 │   │       ├── care_tools.py
-│   │       └── mcp_client.py
-│   ├── .env.example
+│   │       ├── mcp_client.py
+│   │       ├── urgency_scorer.py
+│   │       └── medical_sources.py
 │   ├── langgraph.json
 │   └── requirements.txt
 ├── mcp_server/
-│   ├── server.py
-│   └── data/
-│       └── red_flags.md
+│   └── server.py
 ├── frontend/
-│   ├── index.html
-│   ├── package.json
-│   └── src/
-│       ├── main.jsx
-│       └── styles.css
-├── docs/
-│   └── screenshots/
+│   ├── src/
+│   │   ├── i18n.js
+│   │   └── components/
+│   │       ├── ExportPDF.jsx
+│   │       ├── HistoryPanel.jsx
+│   │       ├── CompareView.jsx
+│   │       ├── Dashboard.jsx
+│   │       ├── LanguageSelector.jsx
+│   │       ├── ImageUpload.jsx
+│   │       ├── UrgencyBadge.jsx
+│   │       └── MedicalSources.jsx
 └── README.md
 ```
 
-## 5. Workflow fonctionnel
+## 5. Architecture du projet
 
-Le workflow suit le scenario demande dans le cahier des charges :
-
-1. L'utilisateur saisit le cas initial du patient.
-2. Le `Supervisor` oriente le workflow vers le `Diagnostic Agent`.
-3. Le `Diagnostic Agent` pose 5 questions successives au patient.
-4. Les reponses sont stockees dans l'etat partage du graphe.
-5. Le systeme genere une synthese clinique preliminaire.
-6. Le systeme produit une recommandation intermediaire prudente.
-7. Le workflow s'interrompt pour la revue du medecin traitant.
-8. Le medecin saisit un traitement ou une conduite a tenir.
-9. Le `Report Agent` genere le rapport final structure.
-10. Le `Supervisor` termine le workflow.
-
-```mermaid
 flowchart TD
-    A["START"] --> B["Supervisor"]
-    B --> C["Diagnostic Agent"]
-    C --> D["Tool ask_patient : 5 questions"]
-    D --> E["Tool recommend_interim_care"]
-    E --> B
-    B --> F["Physician Review : Human-in-the-Loop"]
-    F --> B
-    B --> G["Report Agent"]
-    G --> B
-    B --> H["END"]
-```
+A[START] --> B[Supervisor]
+B --> C[Diagnostic Agent]
+C --> D[Questions dynamiques IA]
+D --> E[Synthèse + Recommandation]
+E --> F[Physician Review]
+F --> G[Report Agent]
+G --> H[END]
 
-## 6. Etat partage LangGraph
+## Étapes du workflow
 
-L'etat partage est defini dans `backend/app/state.py`. Il contient les informations necessaires au suivi de la consultation.
+- Cas initial patient  
+- Questions dynamiques IA  
+- Synthèse clinique + diagnostic différentiel  
+- Recommandation intermédiaire  
+- Intervention médecin (HITL)  
+- Rapport final structuré  
 
-Champs principaux :
+---
 
-- `messages` : historique des messages ;
-- `next` : prochaine etape choisie par le superviseur ;
-- `thread_id` : identifiant de consultation ;
-- `initial_case` : cas initial du patient ;
-- `questions` : liste des 5 questions posees ;
-- `patient_answers` : reponses du patient ;
-- `question_count` : nombre de questions posees ;
-- `interim_care` : recommandation intermediaire ;
-- `diagnostic_summary` : synthese clinique preliminaire ;
-- `physician_treatment` : validation ou conduite a tenir du medecin ;
-- `final_report` : rapport final.
+## 6. État partagé LangGraph
+
+- messages  
+- next  
+- thread_id  
+- initial_case  
+- questions  
+- patient_answers  
+- question_count  
+- interim_care  
+- diagnostic_summary  
+- physician_treatment  
+- physician_notes  
+- final_report  
+- mcp_context  
+- mcp_search  
+- urgency  
+
+---
 
 ## 7. Description des agents
 
 ### 7.1 Supervisor
+Orchestre le workflow et contrôle la progression des étapes.
 
-Fichier : `backend/app/nodes/supervisor.py`
-
-Le `Supervisor` orchestre le workflow. Il decide la prochaine etape selon l'etat courant :
-
-- si la synthese clinique n'existe pas encore, il lance le `Diagnostic Agent` ;
-- si la revue medecin n'existe pas encore, il lance `Physician Review` ;
-- si le rapport final n'existe pas encore, il lance le `Report Agent` ;
-- sinon, il termine le graphe.
+---
 
 ### 7.2 Diagnostic Agent
+- Pose 5 questions dynamiques IA  
+- Analyse les réponses patient  
+- Génère une synthèse clinique  
+- Appelle MCP  
+- Produit une recommandation intermédiaire  
 
-Fichier : `backend/app/nodes/diagnostic_agent.py`
+---
 
-Le `Diagnostic Agent` gere l'interaction patient. Il pose exactement 5 questions via le tool `ask_patient`, puis genere une synthese clinique preliminaire.
+### 7.3 Physician Review (HITL)
+Étape Human-in-the-loop :
 
-Ses responsabilites :
+- synthèse clinique  
+- recommandation  
+- score d’urgence  
+- contexte MCP  
+- décision médicale  
 
-- poser 5 questions successives ;
-- collecter les reponses ;
-- appeler la reference de signes d'alerte ;
-- generer la synthese clinique preliminaire avec OpenAI si la cle API est configuree ;
-- utiliser un fallback local si aucune cle API n'est disponible ;
-- produire la recommandation intermediaire.
-
-### 7.3 Physician Review
-
-Fichier : `backend/app/nodes/physician_review.py`
-
-Cette etape represente le Human-in-the-Loop obligatoire. Le graphe s'interrompt et attend l'intervention du medecin traitant.
-
-Le medecin recoit :
-
-- la synthese clinique preliminaire ;
-- la recommandation intermediaire ;
-- une zone de saisie pour proposer un traitement ou une conduite a tenir.
+---
 
 ### 7.4 Report Agent
+Génère un rapport final structuré en **8 sections**.
 
-Fichier : `backend/app/nodes/report_agent.py`
-
-Le `Report Agent` genere le rapport final structure. Il utilise OpenAI si la cle API est disponible, sinon il produit un rapport local structure.
-
-Le rapport contient :
-
-- le cas initial ;
-- la synthese clinique preliminaire ;
-- la recommandation intermediaire ;
-- la revue du medecin traitant ;
-- la mention ethique obligatoire.
+---
 
 ## 8. Tools internes
 
-### 8.1 Tool `ask_patient`
+### generate_dynamic_question
+Questions adaptées au contexte patient.
 
-Fichier : `backend/app/tools/patient_tools.py`
+---
 
-Ce tool fournit les 5 questions obligatoires posees au patient :
+### recommend_interim_care
+Recommandations médicales intermédiaires.
 
-1. debut des symptomes ;
-2. intensite ;
-3. presence de fievre, gene respiratoire ou douleur ;
-4. antecedents, allergies ou traitements ;
-5. aggravation ou signes inhabituels.
+---
 
-### 8.2 Tool `recommend_interim_care`
+### search_medical_context
+Recherche MCP selon le type de symptômes :
 
-Fichier : `backend/app/tools/care_tools.py`
+- respiratoire  
+- ophtalmologique  
+- digestif  
+- neurologique  
+- dermatologique  
 
-Ce tool genere une recommandation intermediaire prudente. Il detecte certains signes d'alerte dans le cas initial et les reponses patient.
+---
 
-Exemples de recommandations :
+### calculate_urgency_score
+Score d’urgence :
 
-- repos, hydratation, surveillance ;
-- consultation rapide si aggravation ;
-- attention particuliere si presence de douleur thoracique, difficulte respiratoire, confusion, saignement ou forte fievre.
+- 🔴 60–100 : urgent  
+- 🟠 30–59 : rapide  
+- 🟡 10–29 : surveillance  
+- 🟢 0–9 : mineur  
 
-## 9. Integration OpenAI
+---
 
-Fichier : `backend/app/llm.py`
+### get_medical_sources
+Sources médicales (HAS, etc.)
 
-L'integration OpenAI passe par LangChain avec `ChatOpenAI`.
+---
 
-Variables d'environnement :
+## 9. Intégration OpenAI
+
+Configuration :
 
 ```env
-OPENAI_API_KEY=sk-votre-cle-api-ici
+OPENAI_API_KEY=sk-xxx
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-Le fichier reel `backend/.env` doit rester local et ne doit jamais etre pousse sur GitHub. Le fichier `backend/.env.example` sert uniquement de modele.
+## Fonctionnalités
 
-Utilisation dans le projet :
+- questions dynamiques  
+- synthèse clinique  
+- rapport final  
+- recommandations  
+- analyse d’image  
 
-- `Diagnostic Agent` : generation de la synthese clinique preliminaire ;
-- `Report Agent` : generation du rapport final.
+Fallback local si clé absente.
 
-Si la cle API n'existe pas, le projet continue a fonctionner avec des textes generes localement.
+---
 
-## 10. Integration MCP
+## 10. Intégration MCP
 
-Fichier : `mcp_server/server.py`
+Serveur MCP :
 
-Le projet contient un serveur MCP minimal nomme `medical-reference-tools`. Il expose l'outil :
+- `red_flags_reference`
 
-```text
-red_flags_reference
-```
+### Signes d’alerte :
 
-Cet outil retourne une liste de signes d'alerte generaux :
+- douleur thoracique  
+- dyspnée  
+- confusion  
+- malaise  
+- saignement  
+- fièvre persistante  
 
-- douleur thoracique ;
-- difficulte respiratoire ;
-- confusion ;
-- malaise important ;
-- saignement ;
-- forte fievre persistante.
-
-La reference est aussi documentee dans `mcp_server/data/red_flags.md`.
+---
 
 ## 11. API FastAPI
 
-Fichier : `backend/app/api.py`
+| Méthode | Endpoint |
+|--------|---------|
+| POST | /consultation/start |
+| POST | /consultation/resume |
+| POST | /consultation/{id}/physician-review |
+| GET | /consultation/{id} |
+| GET | /consultation/{id}/report |
+| POST | /analyze-image |
 
-L'API permet de demarrer une consultation, reprendre le graphe apres chaque interruption, consulter l'etat courant et recuperer le rapport final.
+---
 
-| Methode | Endpoint | Role |
-| --- | --- | --- |
-| POST | `/sessions/start` | Creer un identifiant de session |
-| POST | `/consultation/start` | Demarrer une consultation |
-| POST | `/consultation/resume` | Reprendre apres une interruption |
-| GET | `/consultation/{thread_id}` | Lire l'etat d'une consultation |
-| GET | `/consultation/{thread_id}/report` | Recuperer le rapport final |
+## 12. Frontend
 
-Exemple de demarrage :
+### Fonctionnalités
 
-```json
-{
-  "initial_case": "Patient avec toux et fatigue depuis 2 jours"
-}
-```
+- cas initial patient  
+- questions dynamiques IA  
+- score d’urgence  
+- revue médecin (HITL)  
+- rapport final  
+- export PDF  
+- historique  
+- dashboard  
+- multi-langue  
 
-Exemple de reprise :
-
-```json
-{
-  "thread_id": "identifiant-consultation",
-  "answer": "Les symptomes ont commence il y a 2 jours"
-}
-```
-
-## 12. Frontend React + Vite
-
-Fichiers principaux :
-
-- `frontend/src/main.jsx`
-- `frontend/src/styles.css`
-- `frontend/package.json`
-
-Le frontend permet d'utiliser le workflow sans appeler directement l'API.
-
-Ecrans couverts :
-
-- saisie du cas initial patient ;
-- affichage des questions patient ;
-- saisie des reponses patient ;
-- revue medecin avec synthese et recommandation ;
-- affichage du rapport final.
-
-L'interface React est dynamique et fluide :
-
-- stepper de progression ;
-- affichage du statut de consultation ;
-- gestion des chargements API ;
-- transitions visuelles entre les etapes ;
-- affichage structure du rapport final ;
-- design responsive pour desktop et mobile.
+---
 
 ## 13. Installation
 
-Depuis la racine du projet :
+### Backend
 
 ```bash
 cd backend
 uv venv
 .venv\Scripts\activate
 uv sync
-```
 
-Creer ensuite le fichier `backend/.env` :
+## Frontend
+cd frontend  
+npm install  
 
-```env
-OPENAI_API_KEY=sk-votre-cle-api-ici
-OPENAI_MODEL=gpt-4o-mini
-```
+---
 
-Installer ensuite le frontend :
+## 14. Exécution
 
-```bash
-cd ../frontend
-npm install
-```
+### Backend
+uvicorn app.api:app --reload --port 8000  
 
-## 14. Execution
+### Frontend
+npm run dev  
 
-### 14.1 Lancer l'API FastAPI
+### MCP Server
+python mcp_server/server.py  
 
-```bash
-cd backend
-uvicorn app.api:app --reload --port 8000
-```
+---
 
-Documentation Swagger :
+## 15. Tests réalisés
+- consultation complète  
+- questions dynamiques  
+- score urgence  
+- MCP contextuel  
+- HITL médecin  
+- rapport final  
 
-```text
-http://127.0.0.1:8000/docs
-```
+---
 
-### 14.2 Lancer le frontend
+## 16. Cas de test
 
-Dans un deuxieme terminal :
+### Cas respiratoire
+Toux + fatigue → surveillance  
 
-```bash
-cd frontend
-npm run dev
-```
+### Cas grave
+Fièvre + douleur thoracique → urgence  
 
-Adresse par defaut :
+### Cas ophtalmologique
+Yeux rouges → contexte MCP ophtalmologique  
 
-```text
-http://127.0.0.1:5173
-```
+---
 
-### 14.3 Lancer le serveur MCP
+## 17. Captures d’écran
+À ajouter dans `docs/screenshots/`
 
-Depuis la racine du projet :
+---
 
-```bash
-python mcp_server/server.py
-```
+## 18. Sécurité et éthique
+- pas un dispositif médical  
+- pas de diagnostic définitif  
+- validation humaine obligatoire  
+- prudence systématique  
 
-### 14.4 Lancer LangGraph Studio
+---
 
-Depuis le dossier `backend` :
+## 19. Git
+git add .  
+git commit -m "update"  
+git push  
 
-```bash
-langgraph dev
-```
-
-Le fichier `backend/langgraph.json` declare le graphe :
-
-```json
-{
-  "dependencies": ["."],
-  "graphs": {
-    "medical_orientation": "./app/graph.py:graph"
-  },
-  "env": ".env"
-}
-```
-
-## 15. Tests realises
-
-Le workflow a ete teste avec les points suivants :
-
-- demarrage d'une consultation ;
-- interruption patient pour chacune des 5 questions ;
-- stockage des reponses dans l'etat ;
-- generation de la synthese clinique preliminaire ;
-- generation de la recommandation intermediaire ;
-- interruption Human-in-the-Loop pour le medecin ;
-- generation du rapport final ;
-- recuperation du rapport via API.
-
-## 16. Jeux de tests attendus
-
-### Cas 1 : syndrome respiratoire simple
-
-Cas initial :
-
-```text
-Toux, nez qui coule, fatigue legere depuis 2 jours, pas de gene respiratoire.
-```
-
-Resultat attendu :
-
-- 5 questions patient ;
-- recommandation repos, hydratation et surveillance ;
-- revue medecin ;
-- rapport final.
-
-### Cas 2 : cas avec signes d'alerte
-
-Cas initial :
-
-```text
-Fievre elevee persistante avec difficulte respiratoire et douleur thoracique.
-```
-
-Resultat attendu :
-
-- 5 questions patient ;
-- recommandation de consultation rapide ;
-- revue medecin prioritaire ;
-- rapport final prudent.
-
-### Cas 3 : cas benin
-
-Cas initial :
-
-```text
-Leger mal de tete apres une journee de travail, pas de fievre, pas d'autre symptome.
-```
-
-Resultat attendu :
-
-- 5 questions patient ;
-- recommandation generale de repos et surveillance ;
-- revue medecin ;
-- rapport final.
-
-## 17. Captures d'ecran
-
-Ajouter les captures dans `docs/screenshots/`.
-
-### 17.1 LangGraph Studio
-
-![Capture LangGraph Studio](docs/screenshots/langgraph-studio.png)
-
-### 17.2 API FastAPI
-
-![Capture FastAPI](docs/screenshots/fastapi-docs.png)
-
-### 17.3 Frontend React
-
-![Capture Frontend](docs/screenshots/frontend.png)
-
-### 17.4 Questions patient
-
-![Capture Questions Patient](docs/screenshots/patient-questions.png)
-
-### 17.5 Revue medecin
-
-![Capture Revue Medecin](docs/screenshots/physician-review.png)
-
-### 17.6 Rapport final
-
-![Capture Rapport Final](docs/screenshots/final-report.png)
-
-## 18. Securite et ethique
-
-Le projet respecte les contraintes pedagogiques suivantes :
-
-- il ne se presente pas comme un dispositif medical ;
-- il ne fournit pas de diagnostic definitif ;
-- il utilise les termes orientation clinique preliminaire et recommandation intermediaire ;
-- il inclut une validation humaine obligatoire ;
-- il mentionne explicitement que le systeme ne remplace pas une consultation medicale ;
-- il ne doit pas publier la cle API OpenAI.
-
-## 19. Gestion Git et GitHub
-
-Le projet est versionne avec Git. Les commits montrent l'avancement progressif :
-
-```bash
-git status
-git add .
-git commit -m "Message du commit"
-```
-
+---
 
 ## 20. Conclusion
 
-Ce projet implemente un systeme multi-agents medical pedagogique conforme au cahier des charges. Il combine LangGraph, FastAPI, MCP, OpenAI et React + Vite pour simuler une consultation encadree, avec collecte patient, synthese preliminaire, recommandation prudente, intervention du medecin et generation d'un rapport final.
+Système multi-agents médical pédagogique basé sur :
 
-Le systeme reste volontairement prudent : il assiste l'orientation clinique mais ne remplace jamais l'avis d'un professionnel de sante.
+- LangGraph  
+- FastAPI  
+- MCP  
+- OpenAI  
+- React  
+
+Avec :
+
+- IA dynamique  
+- score d’urgence  
+- HITL médecin  
+- rapport structuré  
+- export PDF & dashboard  
