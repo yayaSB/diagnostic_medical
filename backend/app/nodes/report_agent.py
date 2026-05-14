@@ -1,44 +1,60 @@
-from app.llm import call_openai
-from app.state import MedicalState
+from langchain_core.messages import AIMessage
+
+from backend.app.state import MedicalState
+from backend.app.llm import call_openai
 
 
-def _fallback_report(state: MedicalState) -> str:
-    return f"""# Rapport final d'orientation clinique
+class ReportAgentNode:
+    def __call__(self, state: MedicalState) -> MedicalState:
+        report = self._generate_report(state)
+        state["final_report"] = report
+        state["messages"] = state.get("messages", []) + [
+            AIMessage(content="RAPPORT FINAL genere.")
+        ]
+        return state
 
-## Cas initial
-{state.get("initial_case", "Non renseigné")}
+    def _generate_report(self, state: MedicalState) -> str:
+        system_prompt = (
+            "Tu es un assistant medical pedagogique. Tu rediges un rapport final "
+            "structure et professionnel. Tu ne diagnosticques pas. Tu inclus "
+            "toujours la mention ethique obligatoire."
+        )
+        user_prompt = (
+            f"Cas initial: {state.get('initial_case', 'N/A')}\n\n"
+            f"Synthese clinique preliminaire:\n{state.get('diagnostic_summary', 'N/A')}\n\n"
+            f"Recommandation intermediaire:\n{state.get('interim_care', 'N/A')}\n\n"
+            f"Revue medecin traitant:\n"
+            f"- Traitement: {state.get('physician_treatment', 'N/A')}\n"
+            f"- Notes: {state.get('physician_notes', 'N/A')}\n\n"
+            "Redige un rapport final complet avec sections claires. "
+            "Termine par la mention: 'Ce systeme ne remplace pas une consultation medicale.'"
+        )
 
-## Synthèse clinique préliminaire
-{state.get("diagnostic_summary", "Non disponible")}
+        llm_result = call_openai(system_prompt, user_prompt, temperature=0.2)
+        if llm_result:
+            return llm_result
 
-## Recommandation intermédiaire
-{state.get("interim_care", "Non disponible")}
+        return f"""RAPPORT FINAL - Orientation Clinique
+=====================================
 
-## Revue du médecin traitant
-{state.get("physician_treatment", "Non renseigné")}
+CAS INITIAL
+-----------
+{state.get('initial_case', 'N/A')}
 
-## Mention éthique
+SYNTHÈSE CLINIQUE PRÉLIMINAIRE
+------------------------------
+{state.get('diagnostic_summary', 'N/A')}
+
+RECOMMANDATION INTERMÉDIAIRE
+----------------------------
+{state.get('interim_care', 'N/A')}
+
+REVUE MÉDECIN TRAITANT
+----------------------
+Traitement proposé : {state.get('physician_treatment', 'N/A')}
+Notes additionnelles : {state.get('physician_notes', 'N/A')}
+
+MENTION ÉTHIQUE
+---------------
 Ce système ne remplace pas une consultation médicale.
 """
-
-
-def report_agent(state: MedicalState) -> MedicalState:
-    report = call_openai(
-        system_prompt=(
-            "Tu es un agent de génération de rapport médical pédagogique. "
-            "Tu produis un rapport final structuré en Markdown. "
-            "Tu ne dois pas présenter le résultat comme un diagnostic définitif."
-        ),
-        user_prompt=(
-            "Rédige un rapport final d'orientation clinique en français avec les sections : "
-            "Cas initial, Synthèse clinique préliminaire, Recommandation intermédiaire, "
-            "Revue du médecin traitant, Mention éthique.\n\n"
-            f"Cas initial:\n{state.get('initial_case', 'Non renseigné')}\n\n"
-            f"Synthèse clinique préliminaire:\n{state.get('diagnostic_summary', 'Non disponible')}\n\n"
-            f"Recommandation intermédiaire:\n{state.get('interim_care', 'Non disponible')}\n\n"
-            f"Revue du médecin traitant:\n{state.get('physician_treatment', 'Non renseigné')}\n\n"
-            "La mention éthique exacte doit apparaître : "
-            "Ce système ne remplace pas une consultation médicale."
-        ),
-    ) or _fallback_report(state)
-    return {"final_report": report}
