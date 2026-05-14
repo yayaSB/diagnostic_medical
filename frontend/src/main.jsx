@@ -216,18 +216,7 @@ function PhysicianReview({ data, onResume, loading }) {
 
 function ReportView({ data, onReset }) {
   const report = data.state?.final_report || "";
-  const formattedReport = useMemo(
-    () =>
-      report
-        .split("\n")
-        .filter(Boolean)
-        .map((line, index) => {
-          if (line.startsWith("# ")) return <h2 key={index}>{line.replace("# ", "")}</h2>;
-          if (line.startsWith("## ")) return <h3 key={index}>{line.replace("## ", "")}</h3>;
-          return <p key={index}>{line}</p>;
-        }),
-    [report],
-  );
+  const formattedReport = useMemo(() => renderReport(report), [report]);
 
   return (
     <section className="workPanel reportPanel enter">
@@ -247,6 +236,88 @@ function ReportView({ data, onReset }) {
       </button>
     </section>
   );
+}
+
+function cleanMarkdown(text) {
+  return text.replace(/\*\*/g, "").replace(/^[-*]\s+/, "").trim();
+}
+
+function renderReport(report) {
+  const lines = report.split("\n");
+  const blocks = [];
+  let listItems = [];
+  let paragraph = [];
+
+  function flushParagraph() {
+    if (paragraph.length) {
+      blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+      paragraph = [];
+    }
+  }
+
+  function flushList() {
+    if (listItems.length) {
+      blocks.push({ type: "list", items: listItems });
+      listItems = [];
+    }
+  }
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    if (line.startsWith("# ")) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "title", text: cleanMarkdown(line.replace("# ", "")) });
+      return;
+    }
+
+    if (line.startsWith("## ")) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "section", text: cleanMarkdown(line.replace("## ", "")) });
+      return;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      flushParagraph();
+      listItems.push(cleanMarkdown(line));
+      return;
+    }
+
+    paragraph.push(cleanMarkdown(line));
+  });
+
+  flushParagraph();
+  flushList();
+
+  return blocks.map((block, index) => {
+    if (block.type === "title") {
+      return <h2 key={index}>{block.text}</h2>;
+    }
+
+    if (block.type === "section") {
+      return <h3 key={index}>{block.text}</h3>;
+    }
+
+    if (block.type === "list") {
+      return (
+        <ul key={index}>
+          {block.items.map((item, itemIndex) => (
+            <li key={`${item}-${itemIndex}`}>{item}</li>
+          ))}
+        </ul>
+      );
+    }
+
+    return <p key={index}>{block.text}</p>;
+  });
 }
 
 function App() {
