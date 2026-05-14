@@ -18,12 +18,19 @@ app.add_middleware(
 
 
 class StartRequest(BaseModel):
-    initial_case: str
+    initial_case: str | None = None
+    patient_case: str | None = None
 
 
 class ResumeRequest(BaseModel):
     thread_id: str
     answer: str
+
+
+class PhysicianReviewRequest(BaseModel):
+    thread_id: str | None = None
+    treatment: str
+    notes: str | None = None
 
 
 def _config(thread_id: str) -> dict:
@@ -50,8 +57,12 @@ def sessions_start() -> dict:
 
 @app.post("/consultation/start")
 def consultation_start(payload: StartRequest) -> dict:
+    initial_case = payload.initial_case or payload.patient_case
+    if not initial_case:
+        raise HTTPException(status_code=422, detail="Cas patient manquant")
+
     thread_id = str(uuid4())
-    graph.invoke({"thread_id": thread_id, "initial_case": payload.initial_case}, _config(thread_id))
+    graph.invoke({"thread_id": thread_id, "initial_case": initial_case}, _config(thread_id))
     return _serialize(thread_id)
 
 
@@ -62,6 +73,18 @@ def consultation_resume(payload: ResumeRequest) -> dict:
         raise HTTPException(status_code=404, detail="Consultation introuvable")
     result = graph.invoke(Command(resume=payload.answer), _config(payload.thread_id))
     return _serialize(payload.thread_id, result)
+
+
+@app.post("/consultation/{thread_id}/physician-review")
+def consultation_physician_review(thread_id: str, payload: PhysicianReviewRequest) -> dict:
+    snapshot = graph.get_state(_config(thread_id))
+    if snapshot.values is None:
+        raise HTTPException(status_code=404, detail="Consultation introuvable")
+    answer = payload.treatment
+    if payload.notes:
+        answer = f"{payload.treatment}\n\nNotes: {payload.notes}"
+    result = graph.invoke(Command(resume=answer), _config(thread_id))
+    return _serialize(thread_id, result)
 
 
 @app.get("/consultation/{thread_id}")
