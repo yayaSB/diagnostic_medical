@@ -18,6 +18,8 @@ os.environ.setdefault("OPENAI_API_KEY", "")
 
 class StartConsultationRequest(BaseModel):
     patient_case: str = Field(..., description="Description initiale du cas patient")
+    image_description: Optional[str] = Field(None, description="Description AI de l'image medicale")
+    image_data: Optional[str] = Field(None, description="Image base64 pour affichage medecin")
 
 class PatientAnswerRequest(BaseModel):
     thread_id: str
@@ -86,7 +88,7 @@ def should_stop_early(answers: list[str], case: str) -> tuple[bool, str]:
     return False, ""
 
 
-def _generate_summary(case: str, questions: list, answers: list, interim: str, mcp_context: str, consensus: dict = None) -> str:
+def _generate_summary(case: str, questions: list, answers: list, interim: str, mcp_context: str, consensus: dict = None, image_description: str = None) -> str:
     """Generate clinical summary with OpenAI or fallback."""
     
     qa_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(questions, answers)])
@@ -94,6 +96,10 @@ def _generate_summary(case: str, questions: list, answers: list, interim: str, m
     consensus_text = ""
     if consensus and consensus.get("avis_gpt", {}).get("response"):
         consensus_text = f"\nAvis GPT: {consensus['avis_gpt']['response'][:200]}...\nAvis Claude: {consensus['avis_claude']['response'][:200]}..."
+    
+    image_text = ""
+    if image_description:
+        image_text = f"\n\nANALYSE IMAGE: {image_description}"
     
     system_prompt = (
         "Tu es un assistant médical pédagogique avancé. Tu produis une synthèse clinique "
@@ -106,7 +112,8 @@ def _generate_summary(case: str, questions: list, answers: list, interim: str, m
         f"Questions-réponses:\n{qa_text}\n\n"
         f"Recommandation intermédiaire: {interim}\n\n"
         f"Contexte MCP:\n{mcp_context[:400]}\n"
-        f"{consensus_text}\n\n"
+        f"{consensus_text}"
+        f"{image_text}\n\n"
         "Rédige une synthèse avec:\n"
         "1. Résumé du cas\n"
         "2. Diagnostic différentiel (2-3 hypothèses avec confiance)\n"
@@ -125,11 +132,15 @@ def _generate_summary(case: str, questions: list, answers: list, interim: str, m
     )
 
 
-def _generate_report(case: str, summary: str, interim: str, treatment: str, notes: str, mcp_context: str, sources: list, urgency: dict) -> str:
+def _generate_report(case: str, summary: str, interim: str, treatment: str, notes: str, mcp_context: str, sources: list, urgency: dict, image_description: str = None) -> str:
     """Generate final report with OpenAI or fallback."""
     urgency = urgency or {"score": 0, "label": "Non evalue"}
     
     sources_text = "\n".join([f"- [{s['type']}] {s['title']}: {s['url']}" for s in sources]) if sources else "Aucune"
+    
+    image_text = ""
+    if image_description:
+        image_text = f"\n\nANALYSE IMAGE:\n{image_description}\n"
     
     system_prompt = (
         "Tu es un assistant médical pédagogique. Rapport final professionnel, "
@@ -142,13 +153,15 @@ def _generate_report(case: str, summary: str, interim: str, treatment: str, note
         f"Synthèse: {summary}\n\n"
         f"Recommandation: {interim}\n\n"
         f"Score urgence: {urgency['score']}/100 ({urgency['label']})\n"
-        f"Contexte: {mcp_context[:300]}\n\n"
+        f"Contexte: {mcp_context[:300]}\n"
+        f"{image_text}\n\n"
         f"Traitement médecin: {treatment}\n"
         f"Notes: {notes or 'Aucune'}\n\n"
         f"Sources: {sources_text}\n\n"
         "Rédige un rapport final avec ces sections DISTINCTES:\n"
         "# MOTIF DE CONSULTATION\n"
         "# ANAMNÈSE\n"
+        "# ANALYSE D'IMAGE\n"  # ← AJOUTÉ
         "# SYNTHÈSE CLINIQUE\n"
         "# DIAGNOSTIC DIFFÉRENTIEL\n"
         "# RECOMMANDATIONS\n"
@@ -172,6 +185,7 @@ RECOMMANDATION: {interim}
 SCORE URGENCE: {urgency['score']}/100 - {urgency['label']}
 REVUE MÉDECIN: {treatment}
 NOTES: {notes or 'Aucune'}
+{image_text}
 
 SOURCES:
 {sources_text}
@@ -210,7 +224,9 @@ def _build_response_payload(thread_id: str, session: dict) -> dict:
             "interim_care": session.get("interim_care", ""),
             "mcp_context": mcp_affiche,
             "urgency": session.get("urgency"),
-            "consensus": session.get("consensus")
+            "consensus": session.get("consensus"),
+            "image_description": session.get("image_description"),  # ← AJOUTÉ
+            "image_data": session.get("image_data"),                 # ← AJOUTÉ
         }
     elif count > 0 and count <= 5:
         current_q_index = count - 1
@@ -254,6 +270,8 @@ def _build_response_payload(thread_id: str, session: dict) -> dict:
             "sources": session.get("sources") or None,
             "urgency": urgency,
             "consensus": session.get("consensus") or None,
+            "image_description": session.get("image_description") or None,  # ← AJOUTÉ
+            "image_data": session.get("image_data") or None,                # ← AJOUTÉ
         }
     }
 
@@ -262,9 +280,15 @@ def _build_response_payload(thread_id: str, session: dict) -> dict:
 async def start_consultation(request: StartConsultationRequest):
     thread_id = str(uuid.uuid4())
     
+    # Enhance case with image description if provided
+    enhanced_case = request.patient_case
+    if request.image_description:
+        enhanced_case = f"{request.patient_case}\n\n[ANALYSE IMAGE]: {request.image_description}"
+    
     session = {
         "thread_id": thread_id,
-        "initial_case": request.patient_case,
+        "initial_case": enhanced_case,
+        "original_case": request.patient_case,  # ← AJOUTÉ: cas original sans image
         "questions": [],
         "patient_answers": [],
         "question_count": 0,
@@ -279,12 +303,14 @@ async def start_consultation(request: StartConsultationRequest):
         "sources": [],
         "urgency": None,
         "consensus": None,
+        "image_description": request.image_description or "",  # ← AJOUTÉ
+        "image_data": request.image_data or "",                # ← AJOUTÉ
     }
     
     sessions[thread_id] = session
     
     # Generate Q1 dynamically with AI
-    question = generate_dynamic_question(request.patient_case, [], 0)
+    question = generate_dynamic_question(enhanced_case, [], 0)
     session["questions"] = [question]
     session["question_count"] = 1
     
@@ -326,7 +352,10 @@ async def resume_consultation(request: PatientAnswerRequest):
         consensus = consensus_medical(case, questions, answers)
         session["consensus"] = consensus
         
-        summary = f"{stop_reason}\n\n" + _generate_summary(case, questions, answers, interim, mcp_search, consensus)
+        image_desc = session.get("image_description")
+        summary = f"{stop_reason}\n\n" + _generate_summary(
+            case, questions, answers, interim, mcp_search, consensus, image_desc
+        )
         
         session["interim_care"] = interim
         session["diagnostic_summary"] = summary
@@ -357,7 +386,8 @@ async def resume_consultation(request: PatientAnswerRequest):
     consensus = consensus_medical(case, questions, answers)
     session["consensus"] = consensus
     
-    summary = _generate_summary(case, questions, answers, interim, mcp_search, consensus)
+    image_desc = session.get("image_description")
+    summary = _generate_summary(case, questions, answers, interim, mcp_search, consensus, image_desc)
     
     session["interim_care"] = interim
     session["diagnostic_summary"] = summary
@@ -395,10 +425,11 @@ async def submit_physician_review(thread_id: str, request: PhysicianReviewReques
     sources = get_medical_sources(case)
     session["sources"] = sources
     
+    image_desc = session.get("image_description")
     report = _generate_report(
         case, summary, interim, 
         request.treatment, request.notes or "",
-        mcp_search, sources, urgency
+        mcp_search, sources, urgency, image_desc
     )
     
     session["final_report"] = report

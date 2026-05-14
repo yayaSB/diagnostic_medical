@@ -68,6 +68,8 @@ const translations = {
     sources: "Sources médicales",
     imageUpload: "Ajouter une photo",
     stopEarly: "Arrêt précoce détecté",
+    imageAnalysis: "Analyse d'image",        // ← AJOUTÉ
+    imageDescription: "Description IA",      // ← AJOUTÉ
   },
   en: {
     title: "Clinical Orientation",
@@ -98,6 +100,8 @@ const translations = {
     sources: "Medical sources",
     imageUpload: "Add a photo",
     stopEarly: "Early stop detected",
+    imageAnalysis: "Image analysis",           // ← AJOUTÉ
+    imageDescription: "AI Description",        // ← AJOUTÉ
   },
   es: {
     title: "Orientación clínica",
@@ -128,6 +132,8 @@ const translations = {
     sources: "Fuentes médicas",
     imageUpload: "Añadir foto",
     stopEarly: "Detención temprana detectada",
+    imageAnalysis: "Análisis de imagen",       // ← AJOUTÉ
+    imageDescription: "Descripción IA",        // ← AJOUTÉ
   },
   ar: {
     title: "التوجيه السريري",
@@ -158,6 +164,8 @@ const translations = {
     sources: "المصادر الطبية",
     imageUpload: "إضافة صورة",
     stopEarly: "تم الكشف عن توقف مبكر",
+    imageAnalysis: "تحليل الصورة",             // ← AJOUTÉ
+    imageDescription: "وصف الذكاء الاصطناعي",  // ← AJOUTÉ
   },
 };
 
@@ -329,9 +337,10 @@ function StatusCard({ data, t, ui, lang, onLangChange, onOpenDashboard }) {
   );
 }
 
-function CaseForm({ onStart, loading, t, ui, onImageUpload }) {
+function CaseForm({ onStart, loading, t, ui, onImageUpload, imageData, onImageRemove }) {  // ← MODIFIÉ
   const [initialCase, setInitialCase] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [analyzingImage, setAnalyzingImage] = useState(false);  // ← AJOUTÉ
 
   const handleImage = (file) => {
     if (!file) return;
@@ -385,10 +394,20 @@ function CaseForm({ onStart, loading, t, ui, onImageUpload }) {
             <div style={{ position: "relative" }}>
               <img
                 src={imagePreview}
+                alt="Preview"
                 style={{ maxWidth: "100%", maxHeight: 150, borderRadius: 8 }}
               />
+              {analyzingImage && (  // ← AJOUTÉ
+                <div style={{ marginTop: 8, color: "#3498db", fontSize: "0.85em" }}>
+                  <Loader2 className="spin" size={14} style={{ display: "inline", marginRight: 5 }} />
+                  Analyse en cours...
+                </div>
+              )}
               <button
-                onClick={() => setImagePreview(null)}
+                onClick={() => {
+                  setImagePreview(null);
+                  onImageRemove?.();  // ← MODIFIÉ
+                }}
                 style={{
                   position: "absolute",
                   top: -10,
@@ -533,10 +552,13 @@ function QuestionForm({ data, onResume, loading, t, ui }) {
   );
 }
 
+// ← MODIFIÉ: Ajout affichage image + description pour le médecin
 function PhysicianReview({ data, onResume, loading, t }) {
   const [treatment, setTreatment] = useState("");
   const [notes, setNotes] = useState("");
   const interrupt = data.interrupt;
+  const imageDescription = data.state?.image_description || interrupt?.image_description;
+  const imageData = data.state?.image_data || interrupt?.image_data;
 
   return (
     <section className="workPanel enter">
@@ -560,6 +582,28 @@ function PhysicianReview({ data, onResume, loading, t }) {
         >
           <strong>⚠️ {t.stopEarly}</strong>
           <p style={{ margin: "5px 0 0" }}>{data.stopReason}</p>
+        </div>
+      )}
+
+      {/* ← AJOUTÉ: Section image visible pour le médecin */}
+      {(imageData || imageDescription) && (
+        <div
+          className="clinicalBox"
+          style={{ background: "#fff8e1", borderLeft: "4px solid #ff9800", marginBottom: 15 }}
+        >
+          <h3>📷 {t.imageAnalysis}</h3>
+          {imageData && (
+            <img
+              src={imageData}
+              alt="Medical"
+              style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 8, marginBottom: 10, display: "block" }}
+            />
+          )}
+          {imageDescription && (
+            <div className="clinicalContent">
+              <p><strong>{t.imageDescription}:</strong> {imageDescription}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1315,7 +1359,8 @@ function App() {
   const [error, setError] = useState("");
   const [lang, setLang] = useState("fr");
   const [showDashboard, setShowDashboard] = useState(false);
-  const [imageData, setImageData] = useState(null);
+  const [imageData, setImageData] = useState(null);        // ← base64 image
+  const [imageDescription, setImageDescription] = useState(null);  // ← description IA
   const activeStep = getActiveStep(data);
   const historyRef = useRef(null);
 
@@ -1347,12 +1392,41 @@ function App() {
     }
   }
 
-  function startConsultation(initialCase) {
+  // ← MODIFIÉ: Analyse image AVANT de démarrer la consultation
+  async function startConsultation(initialCase) {
+    let imgDesc = null;
+    let imgData = null;
+
+    // Si image uploadée, l'analyser d'abord
+    if (imageData) {
+      setLoading(true);
+      try {
+        // Extraire base64 sans le préfixe data URI
+        const base64Image = imageData.replace(/^data:image\/[a-z]+;base64,/, "");
+
+        const response = await fetch(`${API_URL}/analyze-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64Image }),
+        });
+        const result = await response.json();
+        imgDesc = result.description;
+        imgData = imageData;
+        setImageDescription(imgDesc);
+      } catch (err) {
+        console.error("Image analysis failed:", err);
+        // Continue sans description d'image
+      }
+    }
+
+    // Démarrer consultation avec données enrichies
     request("/consultation/start", {
       method: "POST",
       body: JSON.stringify({
         patient_case: initialCase,
         initial_case: initialCase,
+        image_description: imgDesc,
+        image_data: imgData,
       }),
     }).then((result) => {
       if (result && historyRef.current) {
@@ -1391,6 +1465,7 @@ function App() {
     setData(null);
     setError("");
     setImageData(null);
+    setImageDescription(null);
   }
 
   return (
@@ -1429,6 +1504,11 @@ function App() {
             t={t}
             ui={ui}
             onImageUpload={setImageData}
+            imageData={imageData}
+            onImageRemove={() => {
+              setImageData(null);
+              setImageDescription(null);
+            }}
           />
         )}
         {data?.interrupt?.type === "patient_question" && (
