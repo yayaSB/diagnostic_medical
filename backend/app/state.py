@@ -10,10 +10,10 @@ class MedicalState(TypedDict, total=False):
     thread_id: str
     initial_case: str
     questions: list[str]
-    question_sources: list[str]
     patient_answers: list[str]
     question_count: int
     interim_care: str
     diagnostic_summary: str
     physician_treatment: str
+    physician_notes: str
     final_report: str

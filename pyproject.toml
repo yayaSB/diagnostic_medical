@@ -1,7 +1,18 @@
 [project]
 name = "diagnostic-medical"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.14"
-dependencies = []
+description = "Systeme multi-agents medical avec LangGraph"
+requires-python = "==3.11.*"  # <-- FORCE 3.11
+dependencies = [
+    "langgraph>=0.3.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "streamlit>=1.42.0",
+    "python-multipart>=0.0.20",
+    "httpx>=0.28.0",
+    "mcp>=1.6.0",
+    "python-dotenv>=1.0.0",
+]
