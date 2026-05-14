@@ -41,7 +41,13 @@ def call_openai(system_prompt: str, user_prompt: str, temperature: float = 0.2) 
 
     try:
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        llm = ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            api_key=api_key,
+            timeout=8,
+            max_retries=0,
+        )
         response = llm.invoke(
             [
                 ("system", system_prompt),
