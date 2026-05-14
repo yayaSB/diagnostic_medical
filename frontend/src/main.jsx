@@ -26,10 +26,22 @@ const steps = [
 
 function getActiveStep(data) {
   if (!data) return "case";
-  const interrupt = data.interrupt;
-  if (interrupt?.type === "patient_question") return "questions";
-  if (interrupt?.type === "physician_review") return "review";
+  
+  // Completed — has final report
   if (data.state?.final_report) return "report";
+  
+  // Physician review needed
+  if (data.interrupt?.type === "physician_review") return "review";
+  
+  // Asking questions
+  if (data.interrupt?.type === "patient_question") return "questions";
+  
+  // Fallback: if status indicates waiting physician but no interrupt
+  if (data.status === "waiting_physician") return "review";
+  
+  // Fallback: if status completed but no report yet
+  if (data.status === "completed") return "report";
+  
   return "questions";
 }
 
@@ -274,7 +286,7 @@ function App() {
   function startConsultation(initialCase) {
     request("/consultation/start", {
       method: "POST",
-      body: JSON.stringify({ initial_case: initialCase }),
+      body: JSON.stringify({ patient_case: initialCase }),
     });
   }
 
@@ -282,6 +294,18 @@ function App() {
     request("/consultation/resume", {
       method: "POST",
       body: JSON.stringify({ thread_id: data.thread_id, answer }),
+    });
+  }
+
+  // NEW: Separate function for physician review
+  function submitPhysicianReview(treatment) {
+    request(`/consultation/${data.thread_id}/physician-review`, {
+      method: "POST",
+      body: JSON.stringify({ 
+        thread_id: data.thread_id, 
+        treatment: treatment,
+        notes: "" 
+      }),
     });
   }
 
@@ -302,12 +326,14 @@ function App() {
           <QuestionForm data={data} onResume={resumeConsultation} loading={loading} />
         )}
         {data?.interrupt?.type === "physician_review" && (
-          <PhysicianReview data={data} onResume={resumeConsultation} loading={loading} />
+          <PhysicianReview data={data} onResume={submitPhysicianReview} loading={loading} />
         )}
         {data?.state?.final_report && <ReportView data={data} onReset={reset} />}
       </div>
     </main>
   );
 }
+
+
 
 createRoot(document.getElementById("root")).render(<App />);
