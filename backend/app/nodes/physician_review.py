@@ -1,31 +1,15 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from backend.app.state import MedicalState
+from langgraph.types import interrupt
 
-class PhysicianReviewNode:
-    def __call__(self, state: MedicalState) -> MedicalState:
-        messages = state.get("messages", [])
-        diagnostic_summary = state.get("diagnostic_summary", "")
-        interim_care = state.get("interim_care", "")
-        
-        review_message = f"""REVUE MEDECIN REQUISE
+from app.state import MedicalState
 
-Synthese clinique preliminaire:
-{diagnostic_summary}
 
-Recommandation intermediaire:
-{interim_care}
-
-Veuillez proposer un traitement ou une conduite a tenir avant la generation du rapport final.
-
-Ce systeme ne remplace pas une consultation medicale."""
-        
-        new_messages = messages + [
-            SystemMessage(content="[Physician Review] En attente de validation medecin."),
-            HumanMessage(content=review_message)
-        ]
-        
-        return {
-            **state,
-            "messages": new_messages,
-            "status": "waiting_physician",
+def physician_review(state: MedicalState) -> MedicalState:
+    treatment = interrupt(
+        {
+            "type": "physician_review",
+            "diagnostic_summary": state.get("diagnostic_summary", ""),
+            "interim_care": state.get("interim_care", ""),
+            "prompt": "Veuillez saisir le traitement ou la conduite à tenir proposée par le médecin traitant.",
         }
+    )
+    return {"physician_treatment": str(treatment)}

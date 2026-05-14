@@ -1,68 +1,44 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from backend.app.state import MedicalState
+from app.llm import call_openai
+from app.state import MedicalState
 
-class ReportAgentNode:
-    def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
-    
-    def __call__(self, state: MedicalState) -> MedicalState:
-        messages = state.get("messages", [])
-        patient_case = state.get("patient_case", "")
-        patient_responses = state.get("patient_responses", [])
-        diagnostic_summary = state.get("diagnostic_summary", "")
-        interim_care = state.get("interim_care", "")
-        physician_treatment = state.get("physician_treatment", "")
-        physician_notes = state.get("physician_notes", "")
-        
-        report = self._generate_report(
-            patient_case, patient_responses, diagnostic_summary,
-            interim_care, physician_treatment, physician_notes
-        )
-        
-        new_messages = messages + [
-            SystemMessage(content="[Report Agent] Rapport final genere."),
-            HumanMessage(content=f"RAPPORT FINAL\n\n{report}")
-        ]
-        
-        return {
-            **state,
-            "messages": new_messages,
-            "final_report": report,
-            "status": "completed",
-        }
-    
-    def _generate_report(self, case, responses, summary, care, treatment, notes):
-        context = f"Cas initial: {case}\n\nReponses patient:\n"
-        for i, resp in enumerate(responses, 1):
-            context += f"{i}. {resp.get('question', '')} -> {resp.get('answer', '')}\n"
-        
-        prompt = f"""Generez un rapport medical structure au format suivant:
 
-# RAPPORT D'ORIENTATION CLINIQUE
+def _fallback_report(state: MedicalState) -> str:
+    return f"""# Rapport final d'orientation clinique
 
-## 1. INFORMATIONS PATIENT
-- Cas rapporte: [resume]
+## Cas initial
+{state.get("initial_case", "Non renseigné")}
 
-## 2. QUESTIONS ET REPONSES
-[Liste des 5 Q/R]
+## Synthèse clinique préliminaire
+{state.get("diagnostic_summary", "Non disponible")}
 
-## 3. SYNTHESE CLINIQUE PRELIMINAIRE
-{summary}
+## Recommandation intermédiaire
+{state.get("interim_care", "Non disponible")}
 
-## 4. RECOMMANDATION INTERMEDIAIRE
-{care}
+## Revue du médecin traitant
+{state.get("physician_treatment", "Non renseigné")}
 
-## 5. AVIS DU MEDECIN TRAITANT
-{treatment}
+## Mention éthique
+Ce système ne remplace pas une consultation médicale.
+"""
 
-## 6. CONCLUSION
 
----
-AVERTISSEMENT IMPORTANT : Ce systeme est un exercice academique et ne remplace pas une consultation medicale. Ce rapport ne constitue pas un diagnostic definitif.
-
-Donnees brutes:
-{context}"""
-        
-        response = self.llm.invoke([HumanMessage(content=prompt)])
-        return response.content
+def report_agent(state: MedicalState) -> MedicalState:
+    report = call_openai(
+        system_prompt=(
+            "Tu es un agent de génération de rapport médical pédagogique. "
+            "Tu produis un rapport final structuré en Markdown. "
+            "Tu ne dois pas présenter le résultat comme un diagnostic définitif."
+        ),
+        user_prompt=(
+            "Rédige un rapport final d'orientation clinique en français avec les sections : "
+            "Cas initial, Synthèse clinique préliminaire, Recommandation intermédiaire, "
+            "Revue du médecin traitant, Mention éthique.\n\n"
+            f"Cas initial:\n{state.get('initial_case', 'Non renseigné')}\n\n"
+            f"Synthèse clinique préliminaire:\n{state.get('diagnostic_summary', 'Non disponible')}\n\n"
+            f"Recommandation intermédiaire:\n{state.get('interim_care', 'Non disponible')}\n\n"
+            f"Revue du médecin traitant:\n{state.get('physician_treatment', 'Non renseigné')}\n\n"
+            "La mention éthique exacte doit apparaître : "
+            "Ce système ne remplace pas une consultation médicale."
+        ),
+    ) or _fallback_report(state)
+    return {"final_report": report}
