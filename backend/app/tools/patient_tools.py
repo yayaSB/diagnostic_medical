@@ -1,3 +1,5 @@
+import os
+
 from app.llm import call_openai
 
 
@@ -36,6 +38,9 @@ def ask_patient(
     question_number: int,
     mcp_context: str,
 ) -> tuple[str, str]:
+    if os.getenv("ENABLE_OPENAI_QUESTIONS", "1") == "0":
+        return _fallback_question(initial_case, previous_answers, question_number), "fallback"
+
     dialog = "\n".join(
         f"Q{i + 1}: {question}\nR{i + 1}: {previous_answers[i]}"
         for i, question in enumerate(previous_questions)
