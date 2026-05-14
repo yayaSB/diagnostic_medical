@@ -484,7 +484,7 @@ Le projet respecte les contraintes pedagogiques suivantes :
 
 ## 19. Gestion Git et GitHub
 
-Le projet est versionne avec Git. Les commits doivent montrer l'avancement progressif :
+Le projet est versionne avec Git. Les commits montrent l'avancement progressif :
 
 ```bash
 git status
@@ -492,18 +492,6 @@ git add .
 git commit -m "Message du commit"
 ```
 
-Le repository GitHub doit etre prive et partage avec le professeur :
-
-```text
-m.youssfi@enset-media.ac.ma
-```
-
-Important :
-
-- ne jamais pousser `backend/.env` ;
-- pousser seulement `backend/.env.example` ;
-- verifier les fichiers avec `git status` avant chaque push ;
-- ajouter les captures dans `docs/screenshots/` avant le rendu final si elles doivent apparaitre dans le README.
 
 ## 20. Conclusion
 
