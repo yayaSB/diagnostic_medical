@@ -33,12 +33,13 @@ def create_medical_graph():
         }
     )
     
+    # After diagnostic_agent, ALWAYS go back to supervisor to decide next step
     workflow.add_edge("diagnostic_agent", "supervisor")
     workflow.add_edge("physician_review", "supervisor")
     workflow.add_edge("report_agent", "supervisor")
     
     checkpointer = MemorySaver()
-    graph = workflow.compile(checkpointer=checkpointer)
+    graph = workflow.compile(checkpointer=checkpointer, interrupt_before=["physician_review"])
     
     return graph
 
