@@ -15,4 +15,5 @@ class MedicalState(TypedDict, total=False):
     interim_care: str
     diagnostic_summary: str
     physician_treatment: str
+    physician_notes: str
     final_report: str

@@ -3,5 +3,5 @@
   "graphs": {
     "medical_graph": "./app/graph.py:medical_graph"
   },
-  "env": "../.env"
+  "env": ".env"
 }
