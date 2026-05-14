@@ -7,12 +7,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend.app.graph import medical_graph
-from backend.app.state import MedicalState
+from backend.app.tools.patient_tools import ask_patient, QUESTIONS
+from backend.app.tools.care_tools import recommend_interim_care
+from backend.app.tools.mcp_client import get_red_flags_reference
+from backend.app.llm import call_openai
 
 os.environ.setdefault("OPENAI_API_KEY", "")
 
-class StartSessionRequest(BaseModel):
+class StartConsultationRequest(BaseModel):
     patient_case: str = Field(..., description="Description initiale du cas patient")
 
 class PatientAnswerRequest(BaseModel):
@@ -47,221 +49,219 @@ app.add_middleware(
 
 sessions = {}
 
-@app.post("/sessions/start")
-async def start_session(request: StartSessionRequest):
-    thread_id = str(uuid.uuid4())
+def _generate_summary(case: str, questions: list, answers: list, interim: str) -> str:
+    qa_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(questions, answers)])
+    system_prompt = (
+        "Tu es un assistant medical pedagogique. Tu produis une synthese clinique "
+        "preliminaire concise et prudente. Tu ne diagnosticques pas. Tu utilises "
+        "un langage neutre et recommandes toujours une consultation medicale."
+    )
+    user_prompt = (
+        f"Cas initial: {case}\n\n"
+        f"Questions et reponses:\n{qa_text}\n\n"
+        f"Recommandation intermediaire: {interim}\n\n"
+        "Redige une synthese clinique preliminaire de 3 a 5 phrases."
+    )
+    llm_result = call_openai(system_prompt, user_prompt, temperature=0.3)
+    if llm_result:
+        return llm_result
+    return f"Synthese preliminaire (mode local): Le patient decrit '{case}'. Apres {len(answers)} questions, la recommandation est: {interim}"
+
+def _generate_report(case: str, summary: str, interim: str, treatment: str, notes: str) -> str:
+    system_prompt = (
+        "Tu es un assistant medical pedagogique. Tu rediges un rapport final "
+        "structure et professionnel. Tu ne diagnosticques pas. Tu inclus "
+        "toujours la mention ethique obligatoire."
+    )
+    user_prompt = (
+        f"Cas initial: {case}\n\n"
+        f"Synthese clinique preliminaire:\n{summary}\n\n"
+        f"Recommandation intermediaire:\n{interim}\n\n"
+        f"Revue medecin traitant:\n"
+        f"- Traitement: {treatment}\n"
+        f"- Notes: {notes}\n\n"
+        "Redige un rapport final complet avec sections claires. "
+        "Termine par la mention: 'Ce systeme ne remplace pas une consultation medicale.'"
+    )
+    llm_result = call_openai(system_prompt, user_prompt, temperature=0.2)
+    if llm_result:
+        return llm_result
+    return f"""RAPPORT FINAL - Orientation Clinique
+=====================================
+CAS INITIAL: {case}
+SYNTHÈSE: {summary}
+RECOMMANDATION: {interim}
+REVUE MÉDECIN: Traitement: {treatment} | Notes: {notes}
+MENTION ÉTHIQUE: Ce système ne remplace pas une consultation médicale."""
+
+def _build_response_payload(thread_id: str, session: dict) -> dict:
+    count = session.get("question_count", 0)  # How many questions ASKED so far
+    answers_count = len(session.get("patient_answers", []))
+    diagnostic = session.get("diagnostic_summary", "")
+    has_report = bool(session.get("final_report"))
+    has_treatment = bool(session.get("physician_treatment"))
     
-    initial_state: MedicalState = {
-        "messages": [],
-        "next": "diagnostic_agent",
-        "question_count": 0,
-        "patient_case": request.patient_case,
-        "patient_responses": [],
-        "interim_care": "",
-        "diagnostic_summary": "",
-        "physician_treatment": "",
-        "physician_notes": "",
-        "final_report": "",
-        "thread_id": thread_id,
-        "status": "started"
-    }
+    # Determine status
+    status = "in_progress"
+    if has_report:
+        status = "completed"
+    elif has_treatment:
+        status = "physician_reviewed"
+    elif diagnostic:
+        status = "waiting_physician"
     
-    sessions[thread_id] = initial_state
+    # Build interrupt for frontend compatibility
+    interrupt = None
+    
+    if has_report or has_treatment:
+        interrupt = None  # Done
+    elif diagnostic and not has_treatment:
+        # Physician review needed
+        interrupt = {
+            "type": "physician_review",
+            "diagnostic_summary": diagnostic,
+            "interim_care": session.get("interim_care", "")
+        }
+    elif count > 0 and count <= 5:
+        # Currently showing question number 'count' (1-5)
+        # The question index is count - 1 (0-4)
+        current_q_index = count - 1
+        
+        if current_q_index < len(QUESTIONS):
+            question_text = f"Question {count}/5: {QUESTIONS[current_q_index]}"
+            interrupt = {
+                "type": "patient_question",
+                "question": question_text,
+                "question_number": count  # 1, 2, 3, 4, 5
+            }
     
     return {
         "thread_id": thread_id,
-        "status": "started",
-        "message": "Session demarree. Utilisez /consultation/start pour commencer le diagnostic."
+        "status": status,
+        "interrupt": interrupt,
+        "state": {
+            "question_count": count,
+            "patient_answers": session.get("patient_answers", []),
+            "questions": session.get("questions", []),
+            "diagnostic_summary": diagnostic or None,
+            "interim_care": session.get("interim_care") or None,
+            "physician_treatment": session.get("physician_treatment") or None,
+            "physician_notes": session.get("physician_notes") or None,
+            "final_report": session.get("final_report") or None,
+        }
     }
 
 @app.post("/consultation/start")
-async def start_consultation(request: StartSessionRequest):
+async def start_consultation(request: StartConsultationRequest):
     thread_id = str(uuid.uuid4())
     
-    initial_state: MedicalState = {
-        "messages": [],
-        "next": "diagnostic_agent",
+    session = {
+        "thread_id": thread_id,
+        "initial_case": request.patient_case,
+        "questions": [],
+        "patient_answers": [],
         "question_count": 0,
-        "patient_case": request.patient_case,
-        "patient_responses": [],
         "interim_care": "",
         "diagnostic_summary": "",
         "physician_treatment": "",
         "physician_notes": "",
         "final_report": "",
-        "thread_id": thread_id,
-        "status": "in_progress"
     }
     
-    config = {"configurable": {"thread_id": thread_id}}
-    result = medical_graph.invoke(initial_state, config)
-    sessions[thread_id] = result
+    sessions[thread_id] = session
     
-    current_question = None
-    for msg in reversed(result.get("messages", [])):
-        if hasattr(msg, 'content') and "Question" in msg.content:
-            current_question = msg.content
-            break
+    # Ask first question (index 0, display as Question 1/5)
+    question = ask_patient(0)
+    session["questions"] = [question]
+    session["question_count"] = 1
     
-    return {
-        "thread_id": thread_id,
-        "status": result.get("status", "in_progress"),
-        "question_number": result.get("question_count", 0),
-        "current_question": current_question,
-        "message": "Consultation demarree. Veuillez repondre a la question."
-    }
+    return _build_response_payload(thread_id, session)
 
 @app.post("/consultation/resume")
 async def resume_consultation(request: PatientAnswerRequest):
     if request.thread_id not in sessions:
         raise HTTPException(status_code=404, detail="Session non trouvee")
     
-    state = sessions[request.thread_id]
-    question_count = state.get("question_count", 0)
+    session = sessions[request.thread_id]
+    count = session.get("question_count", 0)
+    answers = session.get("patient_answers", [])
     
-    last_question = ""
-    for msg in reversed(state.get("messages", [])):
-        if hasattr(msg, 'content') and "Question" in msg.content:
-            last_question = msg.content
-            break
+    # GUARD: If already have 5 answers, don't accept more
+    if len(answers) >= 5:
+        # Just return current state without adding
+        return _build_response_payload(request.thread_id, session)
     
-    state["patient_responses"] = state.get("patient_responses", []) + [{
-        "question": last_question,
-        "answer": request.answer
-    }]
+    # Store answer
+    answers.append(request.answer)
+    session["patient_answers"] = answers
     
-    from langchain_core.messages import HumanMessage
-    state["messages"] = state.get("messages", []) + [
-        HumanMessage(content=f"Reponse patient: {request.answer}")
-    ]
+    # Check if we need to ask more questions
+    if count < 5:
+        next_q_index = count  # 1, 2, 3, 4 for Q2-Q5
+        
+        if next_q_index < len(QUESTIONS):
+            question = ask_patient(next_q_index)
+            session["questions"] = session.get("questions", []) + [question]
+            session["question_count"] = count + 1
+            return _build_response_payload(request.thread_id, session)
     
-    config = {"configurable": {"thread_id": request.thread_id}}
+    # All 5 questions answered, generate summary
+    case = session.get("initial_case", "")
+    questions = session.get("questions", [])
     
-    try:
-        result = medical_graph.invoke(state, config)
-        sessions[request.thread_id] = result
-        
-        status = result.get("status", "in_progress")
-        question_count = result.get("question_count", 0)
-        diagnostic_summary = result.get("diagnostic_summary", "")
-        
-        current_question = None
-        for msg in reversed(result.get("messages", [])):
-            if hasattr(msg, 'content'):
-                if "Question" in msg.content and question_count < 5:
-                    current_question = msg.content
-                    break
-                elif "REVUE MEDECIN" in msg.content:
-                    status = "waiting_physician"
-                    break
-                elif "RAPPORT FINAL" in msg.content:
-                    status = "completed"
-                    break
-        
-        response = {
-            "thread_id": request.thread_id,
-            "status": status,
-            "question_number": question_count,
-            "current_question": current_question,
-            "diagnostic_summary": diagnostic_summary if diagnostic_summary else None,
-            "interim_care": result.get("interim_care") if result.get("interim_care") else None,
-        }
-        
-        if status == "waiting_physician":
-            response["message"] = "En attente de la revue du medecin."
-        elif status == "completed":
-            response["message"] = "Consultation terminee."
-        else:
-            response["message"] = f"Question {question_count}/5. Veuillez repondre."
-        
-        return response
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")
+    mcp_ref = get_red_flags_reference()
+    interim = recommend_interim_care(case, answers, mcp_ref)
+    summary = _generate_summary(case, questions, answers, interim)
+    
+    session["interim_care"] = interim
+    session["diagnostic_summary"] = summary
+    
+    return _build_response_payload(request.thread_id, session)
 
 @app.post("/consultation/{thread_id}/physician-review")
 async def submit_physician_review(thread_id: str, request: PhysicianReviewRequest):
     if thread_id not in sessions:
         raise HTTPException(status_code=404, detail="Session non trouvee")
     
-    state = sessions[thread_id]
+    session = sessions[thread_id]
     
-    if not state.get("diagnostic_summary"):
+    if not session.get("diagnostic_summary"):
         raise HTTPException(status_code=400, detail="Synthese non disponible")
     
-    state["physician_treatment"] = request.treatment
-    state["physician_notes"] = request.notes or ""
-    state["status"] = "physician_reviewed"
+    session["physician_treatment"] = request.treatment
+    session["physician_notes"] = request.notes or ""
     
-    from langchain_core.messages import HumanMessage
-    state["messages"] = state.get("messages", []) + [
-        HumanMessage(content=f"[Medecin] Traitement propose: {request.treatment}")
-    ]
-    if request.notes:
-        state["messages"].append(HumanMessage(content=f"[Medecin] Notes: {request.notes}"))
+    # Generate final report
+    case = session.get("initial_case", "")
+    summary = session.get("diagnostic_summary", "")
+    interim = session.get("interim_care", "")
     
-    config = {"configurable": {"thread_id": thread_id}}
+    report = _generate_report(case, summary, interim, request.treatment, request.notes or "")
     
-    try:
-        result = medical_graph.invoke(state, config)
-        sessions[thread_id] = result
-        
-        return {
-            "thread_id": thread_id,
-            "status": "completed",
-            "message": "Rapport final genere.",
-            "final_report": result.get("final_report", "")
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur: {str(e)}")
+    session["final_report"] = report
+    
+    return _build_response_payload(thread_id, session)
 
 @app.get("/consultation/{thread_id}")
 async def get_consultation_status(thread_id: str):
     if thread_id not in sessions:
         raise HTTPException(status_code=404, detail="Session non trouvee")
     
-    state = sessions[thread_id]
-    
-    current_question = None
-    for msg in reversed(state.get("messages", [])):
-        if hasattr(msg, 'content') and "Question" in msg.content:
-            current_question = msg.content
-            break
-    
-    formatted_messages = []
-    for msg in state.get("messages", []):
-        if hasattr(msg, 'content'):
-            formatted_messages.append({
-                "role": getattr(msg, 'type', 'unknown'),
-                "content": msg.content
-            })
-    
-    return {
-        "thread_id": thread_id,
-        "status": state.get("status", "unknown"),
-        "question_count": state.get("question_count", 0),
-        "current_question": current_question,
-        "diagnostic_summary": state.get("diagnostic_summary") or None,
-        "interim_care": state.get("interim_care") or None,
-        "physician_treatment": state.get("physician_treatment") or None,
-        "final_report": state.get("final_report") or None,
-        "messages": formatted_messages
-    }
+    return _build_response_payload(thread_id, sessions[thread_id])
 
 @app.get("/consultation/{thread_id}/report")
 async def get_final_report(thread_id: str):
     if thread_id not in sessions:
         raise HTTPException(status_code=404, detail="Session non trouvee")
     
-    state = sessions[thread_id]
+    session = sessions[thread_id]
     
-    if not state.get("final_report"):
+    if not session.get("final_report"):
         raise HTTPException(status_code=400, detail="Rapport non disponible")
     
     return {
         "thread_id": thread_id,
-        "final_report": state["final_report"],
+        "final_report": session["final_report"],
         "status": "completed"
     }
 
