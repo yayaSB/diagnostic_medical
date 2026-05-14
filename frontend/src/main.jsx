@@ -119,6 +119,7 @@ function QuestionForm({ data, onResume, loading }) {
   const [answer, setAnswer] = useState("");
   const interrupt = data.interrupt;
   const answers = data.state?.patient_answers || [];
+  const isAiQuestion = interrupt.question_source === "ai";
 
   return (
     <section className="workPanel enter">
@@ -126,6 +127,9 @@ function QuestionForm({ data, onResume, loading }) {
         <div>
           <p className="eyebrow">Question {interrupt.question_number}/5</p>
           <h2>{interrupt.question}</h2>
+          <span className={`sourceBadge ${isAiQuestion ? "ai" : ""}`}>
+            {isAiQuestion ? "Question generee par IA" : "Question de secours locale"}
+          </span>
         </div>
         <UserRound size={24} />
       </div>
